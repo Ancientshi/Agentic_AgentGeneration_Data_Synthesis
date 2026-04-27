@@ -1,0 +1,67 @@
+{
+  "id": "partiii_000001",
+  "query": "An investigator is studying the incidence of the common cold among medical students during exam periods. Build an agent capable of reasoning about stress immunology and selecting relevant evidence tools.",
+  "gold_agent": {
+    "backbone": "mistralai__Mixtral-8x7B-Instruct-v0.1",
+    "tools": [
+      "Stress-induced immunosuppression markers during exam periods"
+    ]
+  },
+  "action_search_prompt": "Search candidates and tools to solve: An investigator is studying the incidence of the common cold among medical students during exam periods. Build an agent ",
+  "capability_keywords": [
+    "retrieval",
+    "reasoning",
+    "planning"
+  ],
+  "reasoning_type": "task-grounded reasoning",
+  "expected_evidence": "Evidence should include domain-specific capability coverage.",
+  "run": {
+    "session_id": "nuva_session_123",
+    "session_history": [
+      {
+        "step": 1,
+        "action": "SearchLLM",
+        "argument": "stress immunology and causal reasoning",
+        "observation": "Found several biomedical-capable model profiles"
+      },
+      {
+        "step": 2,
+        "action": "SearchTool",
+        "argument": "infection susceptibility biomarkers",
+        "observation": "Retrieved candidate tools for lab marker analysis"
+      },
+      {
+        "step": 3,
+        "action": "BuildContext",
+        "argument": "compose context from retrieved candidates",
+        "observation": "Built context with domain-specific notes"
+      },
+      {
+        "step": 4,
+        "action": "Generate",
+        "argument": "generate final agent",
+        "observation": "Generated a plausible biomedical-focused agent"
+      }
+    ],
+    "response_result": {
+      "backbone": "openai__gpt-4.1",
+      "tools": [
+        "immunology_literature_search",
+        "biomarker_reasoning_tool"
+      ],
+      "profile": "Biomedical reasoning agent focused on stress and infection risk",
+      "policy": "Retrieve evidence, reason causally, and synthesize recommendations"
+    },
+    "raw_backend_response": null
+  },
+  "evaluation": {
+    "match_score": 4,
+    "capability_score": 5,
+    "match_rationale": "Mock: major intentions overlap.",
+    "capability_rationale": "Mock: output can likely solve query.",
+    "missing_capabilities": [],
+    "noisy_or_irrelevant_components": [],
+    "keep_for_sft": true,
+    "quality_tag": "positive"
+  }
+}

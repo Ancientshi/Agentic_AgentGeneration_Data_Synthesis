@@ -1,0 +1,48 @@
+{
+  "id": "partiii_000001",
+  "query": "An investigator is studying the incidence of the common cold among medical students during exam periods. Build an agent capable of reasoning about stress immunology and selecting relevant evidence tools.",
+  "gold_agent": {
+    "backbone": "mistralai__Mixtral-8x7B-Instruct-v0.1",
+    "tools": [
+      "Stress-induced immunosuppression markers during exam periods"
+    ]
+  },
+  "run": {
+    "session_id": "nuva_session_123",
+    "session_history": [
+      {
+        "step": 1,
+        "action": "SearchLLM",
+        "argument": "stress immunology and causal reasoning",
+        "observation": "Found several biomedical-capable model profiles"
+      },
+      {
+        "step": 2,
+        "action": "SearchTool",
+        "argument": "infection susceptibility biomarkers",
+        "observation": "Retrieved candidate tools for lab marker analysis"
+      },
+      {
+        "step": 3,
+        "action": "BuildContext",
+        "argument": "compose context from retrieved candidates",
+        "observation": "Built context with domain-specific notes"
+      },
+      {
+        "step": 4,
+        "action": "Generate",
+        "argument": "generate final agent",
+        "observation": "Generated a plausible biomedical-focused agent"
+      }
+    ],
+    "response_result": {
+      "backbone": "openai__gpt-4.1",
+      "tools": [
+        "immunology_literature_search",
+        "biomarker_reasoning_tool"
+      ],
+      "profile": "Biomedical reasoning agent focused on stress and infection risk",
+      "policy": "Retrieve evidence, reason causally, and synthesize recommendations"
+    }
+  }
+}

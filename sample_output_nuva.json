@@ -1,0 +1,92 @@
+{
+  "id": "partiii_000002",
+  "query": "An investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of immunology reasoning and evidence-grounded analysis.",
+  "gold_agent": {
+    "backbone": "mistralai__Mixtral-8x7B-Instruct-v0.1",
+    "tools": [
+      "Stress-induced immunosuppression markers during exam periods"
+    ]
+  },
+  "action_search_prompt": "Search candidates and tools to solve: An investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of im",
+  "capability_keywords": [
+    "retrieval",
+    "reasoning",
+    "planning"
+  ],
+  "reasoning_type": "task-grounded reasoning",
+  "expected_evidence": "Evidence should include domain-specific capability coverage.",
+  "run": {
+    "session_id": "nuva_e211b3621e43",
+    "session_history": [
+      {
+        "step": 1,
+        "action": "SearchLLM",
+        "argument": "query:\nAn investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of immunology reasoning and evidence-grounded analysis.\n\naction_search_prompt:\nSearch candidates and tools to solve: An investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of im",
+        "observation": "Mock llm candidates"
+      },
+      {
+        "step": 2,
+        "action": "SearchTool",
+        "argument": "query:\nAn investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of immunology reasoning and evidence-grounded analysis.\n\naction_search_prompt:\nSearch candidates and tools to solve: An investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of im",
+        "observation": "Mock tool candidates"
+      },
+      {
+        "step": 3,
+        "action": "Generate",
+        "argument": "query:\nAn investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of immunology reasoning and evidence-grounded analysis.\n\naction_search_prompt:\nSearch candidates and tools to solve: An investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of im",
+        "observation": "Mock generated agent"
+      }
+    ],
+    "response_result": {
+      "backbone": "openai__gpt-4.1",
+      "tools": [
+        "immunology_literature_search",
+        "biomarker_reasoning_tool"
+      ],
+      "profile": "Biomedical reasoning agent",
+      "policy": "retrieve -> reason -> synthesize"
+    },
+    "raw_backend_response": {
+      "session_id": "nuva_e211b3621e43",
+      "session_history": [
+        {
+          "step": 1,
+          "action": "SearchLLM",
+          "argument": "query:\nAn investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of immunology reasoning and evidence-grounded analysis.\n\naction_search_prompt:\nSearch candidates and tools to solve: An investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of im",
+          "observation": "Mock llm candidates"
+        },
+        {
+          "step": 2,
+          "action": "SearchTool",
+          "argument": "query:\nAn investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of immunology reasoning and evidence-grounded analysis.\n\naction_search_prompt:\nSearch candidates and tools to solve: An investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of im",
+          "observation": "Mock tool candidates"
+        },
+        {
+          "step": 3,
+          "action": "Generate",
+          "argument": "query:\nAn investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of immunology reasoning and evidence-grounded analysis.\n\naction_search_prompt:\nSearch candidates and tools to solve: An investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of im",
+          "observation": "Mock generated agent"
+        }
+      ],
+      "response_result": {
+        "backbone": "openai__gpt-4.1",
+        "tools": [
+          "immunology_literature_search",
+          "biomarker_reasoning_tool"
+        ],
+        "profile": "Biomedical reasoning agent",
+        "policy": "retrieve -> reason -> synthesize"
+      }
+    }
+  },
+  "evaluation": {
+    "match_score": 4,
+    "capability_score": 5,
+    "match_rationale": "Mock: major intentions overlap.",
+    "capability_rationale": "Mock: output can likely solve query.",
+    "missing_capabilities": [],
+    "noisy_or_irrelevant_components": [],
+    "keep_for_sft": true,
+    "quality_tag": "positive"
+  }
+}
