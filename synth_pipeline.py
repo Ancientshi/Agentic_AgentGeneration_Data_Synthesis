@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Agentic Controller Trajectory Synthesis pipeline.
 
-Implements a 3-stage workflow:
+Workflow:
 1) Generate non-oracle action_search_prompt from query.
-2) Attach run artifacts (session history + response result) from controller backend.
+2) Run Nuva agent backend (Agno-driven) OR use provided run artifacts.
 3) Critique and score trajectory against gold agent.
 """
 
@@ -14,11 +14,15 @@ import json
 import os
 import re
 import sys
+import uuid
 from dataclasses import asdict, dataclass
 from typing import Any
 from urllib import error, request
 
 DEFAULT_MODEL = "gpt-5.4-nano"
+DEFAULT_NUVA_AGENT_ID = "Nuva_v1"
+DEFAULT_NUVA_API_BASE = "https://api.example.com"
+DEFAULT_NUVA_WEB_URL = "https://os.agno.com/chat?type=agent&id=Nuva_v1"
 
 ACTION_SEARCH_SYSTEM_PROMPT = """You are helping construct search guidance for an agentic agent-generation controller.
 
@@ -102,6 +106,7 @@ class RunArtifacts:
     session_id: str
     session_history: list[dict[str, Any]]
     response_result: dict[str, Any]
+    raw_backend_response: dict[str, Any] | None = None
 
 
 @dataclass
@@ -130,8 +135,6 @@ class SampleRecord:
 
 
 class OpenAIResponsesClient:
-    """Tiny REST client (no external dependency)."""
-
     def __init__(self, model: str = DEFAULT_MODEL, api_key: str | None = None) -> None:
         self.model = model
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
@@ -143,20 +146,14 @@ class OpenAIResponsesClient:
             "model": self.model,
             "input": [
                 {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": json.dumps(user_payload, ensure_ascii=False)}],
-                },
+                {"role": "user", "content": [{"type": "input_text", "text": json.dumps(user_payload, ensure_ascii=False)}]},
             ],
             "text": {"format": {"type": "json_object"}},
         }
         req = request.Request(
             "https://api.openai.com/v1/responses",
             data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
             method="POST",
         )
         try:
@@ -166,8 +163,58 @@ class OpenAIResponsesClient:
             detail = exc.read().decode("utf-8", errors="ignore")
             raise RuntimeError(f"OpenAI API error: {exc.code} {detail}") from exc
 
-        text = body.get("output_text", "")
-        return safe_json_loads(text)
+        return safe_json_loads(body.get("output_text", ""))
+
+
+class NuvaAgentClient:
+    """HTTP client for Agno-driven Nuva agent run endpoint.
+
+    Equivalent to the user-provided curl:
+    POST /agents/{agent_id}/runs with multipart/form-data fields.
+    """
+
+    def __init__(self, api_base: str, token: str, agent_id: str) -> None:
+        self.api_base = api_base.rstrip("/")
+        self.token = token
+        self.agent_id = agent_id
+
+    def run(
+        self,
+        *,
+        message: str,
+        session_id: str,
+        user_id: str,
+        stream: bool = True,
+        files: str = "",
+        version: str = "",
+        background: bool = False,
+    ) -> dict[str, Any]:
+        url = f"{self.api_base}/agents/{self.agent_id}/runs"
+        fields = {
+            "message": message,
+            "stream": str(stream).lower(),
+            "session_id": session_id,
+            "user_id": user_id,
+            "files": files,
+            "version": version,
+            "background": str(background).lower(),
+        }
+        content_type, body = encode_multipart_form_data(fields)
+        req = request.Request(
+            url,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": content_type,
+            },
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=180) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(f"Nuva API error: {exc.code} {detail}") from exc
 
 
 class MockClient:
@@ -192,25 +239,58 @@ class MockClient:
         }
 
 
+class MockNuvaAgentClient:
+    def run(self, **kwargs: Any) -> dict[str, Any]:
+        message = kwargs["message"]
+        return {
+            "session_id": kwargs["session_id"],
+            "session_history": [
+                {"step": 1, "action": "SearchLLM", "argument": message, "observation": "Mock llm candidates"},
+                {"step": 2, "action": "SearchTool", "argument": message, "observation": "Mock tool candidates"},
+                {"step": 3, "action": "Generate", "argument": message, "observation": "Mock generated agent"},
+            ],
+            "response_result": {
+                "backbone": "openai__gpt-4.1",
+                "tools": ["immunology_literature_search", "biomarker_reasoning_tool"],
+                "profile": "Biomedical reasoning agent",
+                "policy": "retrieve -> reason -> synthesize",
+            },
+        }
+
+
 def safe_json_loads(text: str) -> dict[str, Any]:
     try:
-        obj = json.loads(text)
-        if not isinstance(obj, dict):
-            raise ValueError("Top-level response is not a JSON object.")
-        return obj
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            raise ValueError("Top-level response is not object JSON")
+        return parsed
     except json.JSONDecodeError:
-        candidate = extract_first_json_object(text)
-        obj = json.loads(candidate)
-        if not isinstance(obj, dict):
-            raise ValueError("Recovered JSON is not a JSON object.")
-        return obj
+        return json.loads(extract_first_json_object(text))
 
 
 def extract_first_json_object(text: str) -> str:
     match = re.search(r"\{.*\}", text, flags=re.DOTALL)
     if not match:
-        raise ValueError("Could not find JSON object in model output.")
+        raise ValueError("Could not find JSON object in model output")
     return match.group(0)
+
+
+def encode_multipart_form_data(fields: dict[str, str]) -> tuple[str, bytes]:
+    boundary = f"----NuvaBoundary{uuid.uuid4().hex}"
+    lines: list[bytes] = []
+    for name, value in fields.items():
+        lines.extend(
+            [
+                f"--{boundary}".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"'.encode("utf-8"),
+                b"",
+                str(value).encode("utf-8"),
+            ]
+        )
+    lines.append(f"--{boundary}--".encode("utf-8"))
+    lines.append(b"")
+    body = b"\r\n".join(lines)
+    return f"multipart/form-data; boundary={boundary}", body
 
 
 def quality_tag(match_score: int, capability_score: int) -> str:
@@ -230,7 +310,7 @@ def keep_for_sft(match_score: int, capability_score: int) -> bool:
 def generate_action_search(client: Any, query: str) -> dict[str, Any]:
     payload = {
         "query": query,
-        "instruction": "Generate a search-oriented action prompt for an agentic controller."
+        "instruction": "Generate a search-oriented action prompt for an agentic controller.",
     }
     result = client.json_completion(ACTION_SEARCH_SYSTEM_PROMPT, payload)
     required = ["action_search_prompt", "capability_keywords", "reasoning_type", "expected_evidence"]
@@ -256,18 +336,12 @@ def evaluate_trajectory(
         "response_result": response_result,
     }
     result = client.json_completion(CRITIQUE_SYSTEM_PROMPT, payload)
-
-    for key in ["match_score", "capability_score"]:
-        if key not in result:
-            raise ValueError(f"Critique output missing key: {key}")
-
-    ms = int(result["match_score"])
-    cs = int(result["capability_score"])
-    result["match_score"] = max(1, min(6, ms))
-    result["capability_score"] = max(1, min(6, cs))
-    result["quality_tag"] = quality_tag(result["match_score"], result["capability_score"])
-    result["keep_for_sft"] = keep_for_sft(result["match_score"], result["capability_score"])
-
+    ms = max(1, min(6, int(result["match_score"])))
+    cs = max(1, min(6, int(result["capability_score"])))
+    result["match_score"] = ms
+    result["capability_score"] = cs
+    result["quality_tag"] = quality_tag(ms, cs)
+    result["keep_for_sft"] = keep_for_sft(ms, cs)
     result.setdefault("match_rationale", "")
     result.setdefault("capability_rationale", "")
     result.setdefault("missing_capabilities", [])
@@ -275,17 +349,76 @@ def evaluate_trajectory(
     return result
 
 
-def build_record(input_payload: dict[str, Any], client: Any) -> SampleRecord:
-    action = generate_action_search(client, input_payload["query"])
-    run = input_payload["run"]
+def extract_run_artifacts(nuva_response: dict[str, Any], fallback_session_id: str) -> RunArtifacts:
+    """Normalize backend response shape.
+
+    Supports either direct keys:
+      - session_history, response_result
+    or nested run object:
+      - run.session_history, run.response_result
+    """
+    run_obj = nuva_response.get("run", nuva_response)
+    session_history = run_obj.get("session_history") or []
+    response_result = run_obj.get("response_result") or run_obj.get("response") or {}
+    session_id = run_obj.get("session_id") or nuva_response.get("session_id") or fallback_session_id
+
+    if not isinstance(session_history, list):
+        raise ValueError("session_history must be a list in Nuva response")
+    if not isinstance(response_result, dict):
+        raise ValueError("response_result must be an object in Nuva response")
+    return RunArtifacts(
+        session_id=session_id,
+        session_history=session_history,
+        response_result=response_result,
+        raw_backend_response=nuva_response,
+    )
+
+
+def run_nuva_if_needed(input_payload: dict[str, Any], action_search_prompt: str, args: argparse.Namespace) -> RunArtifacts:
+    if "run" in input_payload:
+        run = input_payload["run"]
+        return RunArtifacts(
+            session_id=run["session_id"],
+            session_history=run["session_history"],
+            response_result=run["response_result"],
+            raw_backend_response=None,
+        )
+
+    session_id = args.session_id or f"nuva_{uuid.uuid4().hex[:12]}"
+    user_id = args.user_id or "trajectory_synth_user"
+    message = f"query:\n{input_payload['query']}\n\naction_search_prompt:\n{action_search_prompt}"
+
+    if args.mock:
+        nuva_client: Any = MockNuvaAgentClient()
+    else:
+        token = args.nuva_token or os.getenv("NUVA_API_TOKEN")
+        if not token:
+            raise ValueError("NUVA_API_TOKEN (or --nuva-token) is required when run is not pre-provided.")
+        nuva_client = NuvaAgentClient(api_base=args.nuva_api_base, token=token, agent_id=args.nuva_agent_id)
+
+    nuva_resp = nuva_client.run(
+        message=message,
+        stream=True,
+        session_id=session_id,
+        user_id=user_id,
+        files=args.files,
+        version=args.version,
+        background=False,
+    )
+    return extract_run_artifacts(nuva_resp, fallback_session_id=session_id)
+
+
+def build_record(input_payload: dict[str, Any], llm_client: Any, args: argparse.Namespace) -> SampleRecord:
+    action = generate_action_search(llm_client, input_payload["query"])
+    run = run_nuva_if_needed(input_payload, action["action_search_prompt"], args)
 
     eval_result = evaluate_trajectory(
-        client=client,
+        client=llm_client,
         query=input_payload["query"],
         gold_agent=input_payload["gold_agent"],
         action_search_prompt=action["action_search_prompt"],
-        session_history=run["session_history"],
-        response_result=run["response_result"],
+        session_history=run.session_history,
+        response_result=run.response_result,
     )
 
     return SampleRecord(
@@ -296,17 +429,26 @@ def build_record(input_payload: dict[str, Any], client: Any) -> SampleRecord:
         capability_keywords=action["capability_keywords"],
         reasoning_type=action["reasoning_type"],
         expected_evidence=action["expected_evidence"],
-        run=RunArtifacts(**run),
+        run=run,
         evaluation=Evaluation(**eval_result),
     )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Synthesize and evaluate agentic trajectories.")
-    parser.add_argument("--input", required=True, help="Path to JSON file with query/gold_agent/run fields.")
-    parser.add_argument("--output", required=True, help="Path to write final JSON sample.")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="OpenAI model name.")
-    parser.add_argument("--mock", action="store_true", help="Use mock model outputs for local testing.")
+    parser.add_argument("--input", required=True, help="Input JSON path with id/query/gold_agent and optional run")
+    parser.add_argument("--output", required=True, help="Output JSON path")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="OpenAI model for prompt+critique")
+    parser.add_argument("--mock", action="store_true", help="Use mock model and mock Nuva backend")
+
+    # Nuva/Agno settings (used only when input does not already contain run)
+    parser.add_argument("--nuva-api-base", default=DEFAULT_NUVA_API_BASE, help="Nuva API base URL")
+    parser.add_argument("--nuva-agent-id", default=DEFAULT_NUVA_AGENT_ID, help="Nuva agent id (e.g. Nuva_v1)")
+    parser.add_argument("--nuva-token", default=None, help="Nuva API bearer token; fallback env NUVA_API_TOKEN")
+    parser.add_argument("--session-id", default=None, help="Optional Nuva session id")
+    parser.add_argument("--user-id", default=None, help="Optional Nuva user id")
+    parser.add_argument("--files", default="", help="Nuva files form-field content")
+    parser.add_argument("--version", default="", help="Nuva version form-field content")
     return parser.parse_args()
 
 
@@ -315,14 +457,17 @@ def main() -> int:
     with open(args.input, "r", encoding="utf-8") as f:
         payload = json.load(f)
 
-    client = MockClient() if args.mock else OpenAIResponsesClient(model=args.model)
-    record = build_record(payload, client)
+    llm_client = MockClient() if args.mock else OpenAIResponsesClient(model=args.model)
+    record = build_record(payload, llm_client, args)
 
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(asdict(record), f, ensure_ascii=False, indent=2)
         f.write("\n")
 
     print(f"Wrote synthesized sample to {args.output}")
+    if payload.get("run") is None:
+        print(f"Nuva endpoint pattern: {args.nuva_api_base}/agents/{args.nuva_agent_id}/runs")
+        print(f"Nuva web reference: {DEFAULT_NUVA_WEB_URL}")
     return 0
 
 

@@ -51,7 +51,8 @@
       ],
       "profile": "Biomedical reasoning agent focused on stress and infection risk",
       "policy": "Retrieve evidence, reason causally, and synthesize recommendations"
-    }
+    },
+    "raw_backend_response": null
   },
   "evaluation": {
     "match_score": 4,

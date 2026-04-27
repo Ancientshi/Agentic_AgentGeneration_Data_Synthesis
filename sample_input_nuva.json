@@ -1,0 +1,10 @@
+{
+  "id": "partiii_000002",
+  "query": "An investigator is studying common cold incidence among medical students under exam stress. Build an agent capable of immunology reasoning and evidence-grounded analysis.",
+  "gold_agent": {
+    "backbone": "mistralai__Mixtral-8x7B-Instruct-v0.1",
+    "tools": [
+      "Stress-induced immunosuppression markers during exam periods"
+    ]
+  }
+}
